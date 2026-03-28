@@ -7,10 +7,16 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 @pytest.fixture(scope="session", autouse=True)
 def generate_fixtures():
-    """Generate test PDFs once per test session."""
+    """Generate test PDFs only if they don't already exist.
+
+    This avoids regenerating binary PDFs on every test run,
+    which would cause noisy git diffs.
+    """
     FIXTURES_DIR.mkdir(exist_ok=True)
-    create_native_pdf()
-    create_scan_pdf()
+    if not (FIXTURES_DIR / "native.pdf").exists():
+        create_native_pdf()
+    if not (FIXTURES_DIR / "scanned.pdf").exists():
+        create_scan_pdf()
 
 
 @pytest.fixture(scope="session")
