@@ -39,3 +39,8 @@ output/
 
 # Temporary files from CLI runs
 *.report.json
+
+# Claude Code internal files (managed by Claude Code, not project assets)
+.claude/insight
+.claude/memory.sh
+.claude/obsidian
