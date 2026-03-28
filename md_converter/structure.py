@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from md_converter.extractor import Block, BlockType
 
-_BULLET_RE = re.compile(r"^[\u2022\u2023\u25E6\u2043\u2219•◦▪▸\-\*]\s+")
+_BULLET_RE = re.compile(r"^[\u00B7\u2022\u2023\u25E6\u2043\u2219•◦▪▸·\-\*]\s+")
 _ORDERED_RE = re.compile(r"^(\d+|[a-zA-Z])[.)]\s+")
 _NUMBERED_HEADING_RE = re.compile(r"^\d+(\.\d+)*\.?\s{1,3}\S")
 
