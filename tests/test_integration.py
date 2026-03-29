@@ -105,13 +105,16 @@ def test_deterministic_output(native_pdf_path):
 
 def test_pdf_to_anki_produces_cards(native_pdf_path):
     """Full pipeline: PDF → Markdown → Anki cards (non-empty)."""
+    from md_converter.anki_generator import _is_short_answer_allowed
     md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
     cards, n_filtered = generate_deck(md, GeneratorOptions(source_name="native_test"))
     assert len(cards) > 0, "Expected at least one card from a real PDF"
     assert isinstance(n_filtered, int)
     for card in cards:
         assert card.front.strip(), "Card front must not be empty"
-        assert len(card.back.strip()) >= 20, "Card back too short"
+        back = card.back.strip()
+        # Short answers are valid for formulas, legal citations, and factual data
+        assert len(back) >= 20 or _is_short_answer_allowed(back), "Card back too short"
 
 
 def test_anki_export_csv_importable(native_pdf_path, tmp_path):
@@ -136,12 +139,9 @@ def test_anki_cards_deterministic(native_pdf_path):
     assert [(c.front, c.back) for c in cards1] == [(c.front, c.back) for c in cards2]
 
 
-def test_anki_respects_max_cards_per_section(native_pdf_path):
-    """max_cards_per_section=1 must yield at most 1 card per section."""
+def test_anki_respects_total_cards_per_pdf(native_pdf_path):
+    """total_cards_per_pdf=5 must yield at most 5 cards total."""
     md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
-    opts = GeneratorOptions(max_cards_per_section=1, source_name="test")
+    opts = GeneratorOptions(total_cards_per_pdf=5, source_name="test")
     cards, _ = generate_deck(md, opts)
-    from collections import Counter
-    counts = Counter(c.source for c in cards)
-    for src, count in counts.items():
-        assert count <= 1, f"Section '{src}' has {count} cards, expected ≤ 1"
+    assert len(cards) <= 5, f"Expected ≤ 5 cards, got {len(cards)}"

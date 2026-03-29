@@ -22,8 +22,8 @@ class Section:
 
 @dataclass
 class GeneratorOptions:
-    max_cards_per_section: int = 5
-    min_answer_length: int = 20
+    total_cards_per_pdf: int = 20   # global quota for the whole PDF
+    min_answer_length: int = 20     # minimum back length (exceptions: formula, citation, factual)
     source_name: str = ""
 
 
@@ -188,9 +188,175 @@ def _format_back(content: str) -> str:
     return "\n".join(lines)
 
 
+def _post_process_back(back: str) -> str:
+    """Normalize answer text: capitalize first letter, end single-paragraph prose with a period."""
+    if not back:
+        return back
+    back = re.sub(r'  +', ' ', back).strip()
+    if back and back[0].islower():
+        back = back[0].upper() + back[1:]
+    # Only add period for single-paragraph prose (not lists or multi-line content)
+    if '\n' not in back and back and back[-1] not in '.!?:;)»"\u2019\u2013\u2014':
+        back += '.'
+    return back
+
+
+# ── Quality helpers ──────────────────────────────────────────────────────────
+
+# Patterns for short-answer exceptions: formula, legal citation, factual data
+_FORMULA_RE = re.compile(
+    r'\\[A-Za-z]+|'           # LaTeX: \frac, \int, \sum …
+    r'\$[^$]+\$|'              # inline LaTeX: $E=mc^2$
+    r'[A-Za-z]\s*=\s*\S|'     # algebraic: E = mc², f(x) = …
+    r'\d+\s*[+\-*/^]\s*\d+',  # arithmetic: 2^n, n*(n-1)
+)
+_LEGAL_RE = re.compile(
+    r'\b(article|art\.|loi|code\s+\w|décret|arrêté|ordonnance|alinéa)\b',
+    re.IGNORECASE,
+)
+_FACTUAL_RE = re.compile(
+    r'\b(1[0-9]{3}|20[0-9]{2})\b'    # years: 1789, 2024
+    r'|\d+\s*%'                        # percentages: 98 %, 12.5%
+    r'|\d+\s*(°C|km|kg|m²|m³|mol|[VAHJWN])\b'  # physical quantities
+)
+
+
+def _is_short_answer_allowed(back: str) -> bool:
+    """Short answers are valid for formulas, legal citations, and factual data."""
+    return bool(
+        _FORMULA_RE.search(back)
+        or _LEGAL_RE.search(back)
+        or _FACTUAL_RE.search(back)
+    )
+
+
+def _is_tautological(front: str, back: str) -> bool:
+    """Return True if the answer is essentially a restatement of the question."""
+    f = front.strip().lower()
+    b = back.strip().lower()
+    if f == b:
+        return True
+    # Normalise punctuation for a second pass
+    f_clean = re.sub(r'[^\w\s]', '', f)
+    b_clean = re.sub(r'[^\w\s]', '', b)
+    return f_clean == b_clean
+
+
+_TRIVIAL: frozenset[str] = frozenset({"oui", "non", "vrai", "faux", "yes", "no", "true", "false"})
+
+
+def filter_cards(cards: list[AnkiCard], options: GeneratorOptions) -> tuple[list[AnkiCard], int]:
+    """Remove low-quality cards: empty, too short, trivial, tautological, duplicate.
+
+    Short answers are kept when they contain a formula, legal citation, or factual data.
+    Returns (kept_cards, filtered_count).
+    """
+    filtered = 0
+    kept: list[AnkiCard] = []
+    seen: set[tuple[str, str]] = set()
+
+    for card in cards:
+        front = card.front.strip()
+        back = card.back.strip()
+
+        if not front or not back:
+            filtered += 1
+            continue
+
+        # Front must look like a meaningful question (≥ 10 chars)
+        if len(front) < 10:
+            filtered += 1
+            continue
+
+        # Short answer: allowed only for formula/citation/factual exceptions
+        if len(back) < options.min_answer_length and not _is_short_answer_allowed(back):
+            filtered += 1
+            continue
+
+        if back.lower() in _TRIVIAL:
+            filtered += 1
+            continue
+
+        if _is_tautological(front, back):
+            filtered += 1
+            continue
+
+        key = (front, back)
+        if key in seen:
+            filtered += 1
+            continue
+        seen.add(key)
+
+        # Build a new card with the normalized back (avoid mutating the original)
+        kept.append(AnkiCard(
+            front=front,
+            back=_post_process_back(back),
+            card_type=card.card_type,
+            tags=list(card.tags),
+            source=card.source,
+        ))
+
+    return kept, filtered
+
+
+# ── PDF-level quota ──────────────────────────────────────────────────────────
+
+_TYPE_PRIORITY: dict[str, int] = {
+    "theorem": 6, "formula": 6,
+    "definition": 5, "property": 5,
+    "method": 4, "condition": 4,
+    "cause": 3, "consequence": 3, "comparison": 3,
+    "purpose": 2, "exception": 2, "application": 2,
+    "example": 1, "enumeration": 1, "actor": 1, "event_date": 1,
+}
+
+
+def _apply_pdf_quota(cards: list[AnkiCard], total: int) -> tuple[list[AnkiCard], int]:
+    """Select up to `total` highest-quality cards ensuring cross-section diversity.
+
+    Cards are ranked by type priority then back length.  A per-source cap prevents
+    any single section from monopolising the quota.
+    """
+    if len(cards) <= total:
+        return cards, 0
+
+    def _score(card: AnkiCard) -> tuple[int, int]:
+        return (_TYPE_PRIORITY.get(card.card_type, 1), min(len(card.back), 400))
+
+    scored = sorted(cards, key=_score, reverse=True)
+
+    n_sources = max(1, len({c.source for c in cards}))
+    # Each source gets at least 1 slot; average is total/n_sources, cap at +1
+    cap_per_source = max(2, (total + n_sources - 1) // n_sources + 1)
+
+    by_source: dict[str, int] = defaultdict(int)
+    kept: list[AnkiCard] = []
+    deferred: list[AnkiCard] = []
+
+    for card in scored:
+        if by_source[card.source] < cap_per_source:
+            kept.append(card)
+            by_source[card.source] += 1
+        else:
+            deferred.append(card)
+        if len(kept) >= total:
+            break
+
+    # Fill remaining slots from deferred if needed
+    if len(kept) < total:
+        kept.extend(deferred[:total - len(kept)])
+
+    final = kept[:total]
+    return final, len(cards) - len(final)
+
+
 def generate_cards_for_section(section: Section, options: GeneratorOptions) -> list[AnkiCard]:
     """Generate AnkiCards from a single section. Returns empty list if content is empty."""
     if not section.content.strip():
+        return []
+
+    # Skip headings that are too short to yield meaningful questions
+    if len(section.heading.strip()) < 3:
         return []
 
     categories = detect_categories(section)
@@ -211,50 +377,6 @@ def generate_cards_for_section(section: Section, options: GeneratorOptions) -> l
     ]
 
 
-_TRIVIAL: frozenset[str] = frozenset({"oui", "non", "vrai", "faux", "yes", "no", "true", "false"})
-
-
-def filter_cards(cards: list[AnkiCard], options: GeneratorOptions) -> tuple[list[AnkiCard], int]:
-    """Remove low-quality cards: empty fronts, short/trivial backs, duplicates. Returns (kept, filtered_count)."""
-    filtered = 0
-    kept: list[AnkiCard] = []
-    seen: set[tuple[str, str]] = set()
-
-    for card in cards:
-        back = card.back.strip()
-        if not card.front.strip():
-            filtered += 1
-            continue
-        if len(back) < options.min_answer_length:
-            filtered += 1
-            continue
-        if back.lower() in _TRIVIAL:
-            filtered += 1
-            continue
-        key = (card.front, card.back)
-        if key in seen:
-            filtered += 1
-            continue
-        seen.add(key)
-        kept.append(card)
-
-    return kept, filtered
-
-
-def _apply_max_per_section(cards: list[AnkiCard], max_n: int) -> tuple[list[AnkiCard], int]:
-    by_source: dict[str, list[AnkiCard]] = defaultdict(list)
-    for card in cards:
-        by_source[card.source].append(card)
-
-    kept: list[AnkiCard] = []
-    filtered = 0
-    for source_cards in by_source.values():
-        sorted_cards = sorted(source_cards, key=lambda c: len(c.back), reverse=True)
-        kept.extend(sorted_cards[:max_n])
-        filtered += max(0, len(sorted_cards) - max_n)
-    return kept, filtered
-
-
 def generate_deck(
     markdown: str,
     options: GeneratorOptions | None = None,
@@ -272,5 +394,5 @@ def generate_deck(
         all_cards.extend(generate_cards_for_section(section, options))
 
     kept, quality_filtered = filter_cards(all_cards, options)
-    final, max_filtered = _apply_max_per_section(kept, options.max_cards_per_section)
-    return final, quality_filtered + max_filtered
+    final, quota_filtered = _apply_pdf_quota(kept, options.total_cards_per_pdf)
+    return final, quality_filtered + quota_filtered
