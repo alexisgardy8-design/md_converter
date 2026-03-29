@@ -118,3 +118,105 @@ def test_detect_no_content_returns_enumeration():
     s = Section(heading="Vide", level=2, content="")
     cats = detect_categories(s)
     assert cats == ["enumeration"]
+
+
+from md_converter.anki_generator import (
+    generate_cards_for_section,
+    filter_cards,
+    generate_deck,
+    GeneratorOptions,
+    AnkiCard,
+)
+
+
+def test_generate_cards_definition():
+    s = Section(heading="Dérivée", level=2,
+                content="La dérivée est la limite du taux de variation quand h tend vers 0. "
+                        "Elle mesure la pente instantanée de la courbe.")
+    opts = GeneratorOptions(source_name="maths")
+    cards = generate_cards_for_section(s, opts)
+    assert len(cards) >= 1
+    fronts = [c.front for c in cards]
+    assert any("Définir" in f or "est-ce que" in f for f in fronts)
+
+
+def test_generate_cards_tags_and_source():
+    s = Section(heading="TestSection", level=1, content="Contenu suffisant pour générer une carte avec du texte.")
+    opts = GeneratorOptions(source_name="cours_test")
+    cards = generate_cards_for_section(s, opts)
+    if cards:
+        assert "cours" in cards[0].tags
+        assert "source:cours_test" in cards[0].tags
+        assert "cours_test" in cards[0].source
+
+
+def test_generate_cards_empty_content_returns_empty():
+    s = Section(heading="Vide", level=2, content="")
+    cards = generate_cards_for_section(s, GeneratorOptions())
+    assert cards == []
+
+
+def test_filter_rejects_empty_front():
+    cards = [AnkiCard(front="", back="Réponse suffisamment longue pour passer le filtre.", card_type="x")]
+    kept, n_filtered = filter_cards(cards, GeneratorOptions(min_answer_length=10))
+    assert n_filtered == 1
+    assert len(kept) == 0
+
+
+def test_filter_rejects_short_back():
+    cards = [AnkiCard(front="Question ?", back="oui", card_type="x")]
+    kept, n_filtered = filter_cards(cards, GeneratorOptions(min_answer_length=20))
+    assert n_filtered == 1
+    assert len(kept) == 0
+
+
+def test_filter_rejects_trivial_back():
+    for trivial in ["oui", "non", "yes", "no", "vrai", "faux"]:
+        cards = [AnkiCard(front="Q ?", back=trivial, card_type="x")]
+        kept, n = filter_cards(cards, GeneratorOptions(min_answer_length=1))
+        assert n == 1, f"Expected '{trivial}' to be filtered"
+
+
+def test_filter_deduplicates():
+    card = AnkiCard(front="Q ?", back="R " * 15, card_type="x")
+    kept, n_filtered = filter_cards([card, card, card], GeneratorOptions())
+    assert len(kept) == 1
+    assert n_filtered == 2
+
+
+def test_generate_deck_returns_cards():
+    md = (
+        "# Introduction\n"
+        "La dérivée est la limite du taux de variation. Elle permet d'étudier les variations.\n\n"
+        "## Théorème de Rolle\n"
+        "Théorème : si f est continue sur [a,b] et dérivable sur ]a,b[ alors il existe c tel que f'(c)=0.\n"
+    )
+    cards, n_filtered = generate_deck(md, "maths_cours")
+    assert len(cards) > 0
+    assert isinstance(n_filtered, int) and n_filtered >= 0
+
+
+def test_generate_deck_deterministic():
+    md = "# Section\nDéfinition : X est un espace vectoriel si ses éléments vérifient les axiomes de groupe."
+    cards1, _ = generate_deck(md, "test")
+    cards2, _ = generate_deck(md, "test")
+    assert [(c.front, c.back) for c in cards1] == [(c.front, c.back) for c in cards2]
+
+
+def test_generate_deck_respects_max_cards():
+    md = (
+        "# BigSection\n"
+        "Définition : le droit est l'ensemble des règles qui régissent la société. "
+        "Par exemple, le Code civil. Contrairement à la morale, il est contraignant. "
+        "Il est utilisé en contentieux, droit des affaires, droit pénal. "
+        "Étapes : 1. Identifier 2. Qualifier 3. Appliquer. "
+        "Théorème : tout acte illicite oblige son auteur à réparer.\n"
+    )
+    cards, _ = generate_deck(md, "droit", GeneratorOptions(max_cards_per_section=3))
+    assert len(cards) <= 3
+
+
+def test_generate_deck_empty_markdown():
+    cards, n_filtered = generate_deck("", "empty")
+    assert cards == []
+    assert n_filtered == 0
