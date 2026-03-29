@@ -176,3 +176,56 @@ Expected: 44 passed, 1 skipped (OCR test skipped when tesseract is not installed
 - **Two-column layout** detection uses a fixed 55% page-width midpoint. Unusual layouts may produce incorrect column ordering.
 - **Scanned PDFs** require `tesseract-ocr` to be installed separately (system package).
 - **Very large PDFs** (>500 pages) process all pages sequentially; there is no parallel processing in v0.1.
+
+---
+
+## Anki Deck Generation
+
+Generate Anki-importable flashcards from converted Markdown:
+
+```bash
+# Convert PDF → Markdown + Anki deck (CSV by default)
+python3 convert.py --anki
+
+# Both CSV and TXT
+python3 convert.py --anki --anki-format both
+
+# Force regeneration on already-converted files
+python3 convert.py --anki --anki-regenerate
+
+# Tune card quality
+python3 convert.py --anki --anki-max-cards 7 --anki-min-length 30
+```
+
+### Anki options
+
+| Option | Default | Description |
+|---|---|---|
+| `--anki` | off | Enable Anki deck generation |
+| `--anki-format csv\|txt\|both` | `csv` | Export format |
+| `--anki-separator SEP` | `;` | Field separator |
+| `--anki-regenerate` | off | Regenerate deck even if MD was skipped |
+| `--anki-max-cards N` | `5` | Max cards per section |
+| `--anki-min-length N` | `20` | Min answer length (chars) |
+
+Output files:
+```
+output/<subpath>/<filename>.anki.csv
+output/<subpath>/<filename>.anki.txt
+```
+
+See [docs/ANKI_IMPORT_GUIDE.md](docs/ANKI_IMPORT_GUIDE.md) for step-by-step Anki import instructions.
+
+---
+
+## Streamlit UI (localhost)
+
+A browser interface for one-off conversions:
+
+```bash
+pip install streamlit  # if not already installed
+streamlit run app.py
+# → http://localhost:8501
+```
+
+Upload a PDF, choose options, click **Convertir**. Download the `.md` and `.anki.csv`/`.anki.txt` directly from the browser.

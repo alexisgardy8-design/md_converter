@@ -3,6 +3,8 @@ import json
 import pytest
 from md_converter.pipeline import convert_pdf
 from md_converter.optimizer import Mode
+from md_converter.anki_generator import generate_deck, GeneratorOptions
+from md_converter.anki_exporter import export_deck, ExportOptions
 
 
 def test_native_pdf_pipeline(native_pdf_path):
@@ -99,3 +101,47 @@ def test_deterministic_output(native_pdf_path):
     md1, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
     md2, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
     assert md1 == md2
+
+
+def test_pdf_to_anki_produces_cards(native_pdf_path):
+    """Full pipeline: PDF → Markdown → Anki cards (non-empty)."""
+    md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
+    cards, n_filtered = generate_deck(md, GeneratorOptions(source_name="native_test"))
+    assert len(cards) > 0, "Expected at least one card from a real PDF"
+    assert isinstance(n_filtered, int)
+    for card in cards:
+        assert card.front.strip(), "Card front must not be empty"
+        assert len(card.back.strip()) >= 20, "Card back too short"
+
+
+def test_anki_export_csv_importable(native_pdf_path, tmp_path):
+    """CSV export must be parseable with csv.reader using default separator."""
+    import csv as csv_mod
+    md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
+    cards, _ = generate_deck(md)
+    base = tmp_path / "export"
+    paths = export_deck(cards, base, ExportOptions(format="csv", separator=";"))
+    assert len(paths) == 1
+    content = paths[0].read_text(encoding="utf-8")
+    rows = list(csv_mod.reader(content.splitlines(), delimiter=";"))
+    assert rows[0] == ["front", "back", "tags", "source", "card_type"]
+    assert len(rows) > 1
+
+
+def test_anki_cards_deterministic(native_pdf_path):
+    """Two generate_deck calls on the same markdown must return identical results."""
+    md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
+    cards1, _ = generate_deck(md)
+    cards2, _ = generate_deck(md)
+    assert [(c.front, c.back) for c in cards1] == [(c.front, c.back) for c in cards2]
+
+
+def test_anki_respects_max_cards_per_section(native_pdf_path):
+    """max_cards_per_section=1 must yield at most 1 card per section."""
+    md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
+    opts = GeneratorOptions(max_cards_per_section=1, source_name="test")
+    cards, _ = generate_deck(md, opts)
+    from collections import Counter
+    counts = Counter(c.source for c in cards)
+    for src, count in counts.items():
+        assert count <= 1, f"Section '{src}' has {count} cards, expected ≤ 1"
