@@ -44,3 +44,7 @@ output/
 .claude/insight
 .claude/memory.sh
 .claude/obsidian
+
+# Git worktrees
+.worktrees/
+
