@@ -92,9 +92,16 @@ def _generate_anki_for_pdf(
     gen_opts = GeneratorOptions(
         total_cards_per_pdf=args.anki_total_cards,
         min_answer_length=args.anki_min_length,
+        min_quality_score=args.anki_min_quality,
         source_name=pdf_path.stem,
     )
     cards, n_filtered = generate_deck(markdown, gen_opts)
+
+    if args.anki_neural and cards:
+        from md_converter.anki_validator import CardValidator
+        validator = CardValidator(use_neural=True, quality_threshold=args.anki_min_quality)
+        cards, n_neural_rejected = validator.validate_deck(cards)
+        n_filtered += n_neural_rejected
 
     export_opts = ExportOptions(format=args.anki_format, separator=args.anki_separator)
     created = export_deck(cards, base_path, export_opts)
@@ -191,6 +198,14 @@ def main(argv: list[str] | None = None) -> int:
     anki.add_argument(
         "--anki-min-length", type=int, default=20, dest="anki_min_length", metavar="N",
         help="Minimum answer length in characters (default: 20).",
+    )
+    anki.add_argument(
+        "--anki-min-quality", type=float, default=30.0, dest="anki_min_quality", metavar="N",
+        help="Minimum quality score 0-100 to accept a card (default: 30).",
+    )
+    anki.add_argument(
+        "--anki-neural", action="store_true", dest="anki_neural",
+        help="Enable neural validation via sentence-transformers (requires: pip install sentence-transformers).",
     )
 
     args = parser.parse_args(argv)

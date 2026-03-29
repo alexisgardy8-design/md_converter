@@ -291,6 +291,7 @@ with col_opts:
         )
 
     min_length = st.slider("Longueur min. réponse (caractères)", min_value=5, max_value=100, value=20)
+    min_quality = st.slider("Score qualité minimum (0-100)", min_value=0, max_value=100, value=30)
     st.markdown("<br>", unsafe_allow_html=True)
     convert_btn = st.button("Convertir", use_container_width=True)
 
@@ -324,6 +325,7 @@ if uploaded_file and convert_btn:
         gen_opts = GeneratorOptions(
             total_cards_per_pdf=st.session_state["total_cards"],
             min_answer_length=min_length,
+            min_quality_score=float(min_quality),
             source_name=source_name,
         )
 
@@ -350,6 +352,7 @@ if uploaded_file and convert_btn:
 
     # ── Stats ──────────────────────────────────────────────────────────────────
 
+    avg_quality = round(sum(c.quality_score for c in cards) / max(1, len(cards)), 1)
     st.markdown(f"""
 <div class="stats-row">
   <div class="stat-block">
@@ -371,6 +374,10 @@ if uploaded_file and convert_btn:
   <div class="stat-block">
     <div class="stat-number">{filtered_count}</div>
     <div class="stat-label">Filtrées</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-number">{avg_quality}</div>
+    <div class="stat-label">Score moyen</div>
   </div>
   <div class="stat-block">
     <div class="stat-number">{elapsed:.1f}s</div>
@@ -411,10 +418,14 @@ if uploaded_file and convert_btn:
             back_preview = card.back[:160].replace("\n", " ")
             if len(card.back) > 160:
                 back_preview += "…"
+            snippet_preview = card.source_snippet[:100].replace("\n", " ") if card.source_snippet else ""
+            score_color = "#f0a500" if card.quality_score >= 60 else ("#8888aa" if card.quality_score >= 40 else "#663333")
             cards_html += f"""<div class="anki-card">
   <span class="badge {badge_cls}">{card.card_type}</span>
+  <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:{score_color};float:right;">q={card.quality_score:.0f}</span>
   <div class="card-front">{card.front}</div>
   <div class="card-back">{back_preview}</div>
+  {f'<div style="font-size:0.65rem;color:#3a3a5a;font-family:JetBrains Mono,monospace;margin-top:0.3rem;border-top:1px solid #1e1e2e;padding-top:0.25rem;">↳ {snippet_preview}</div>' if snippet_preview else ''}
 </div>"""
 
         if len(cards) > 12:
