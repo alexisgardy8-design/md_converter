@@ -20,13 +20,17 @@ def _tags_str(tags: list[str]) -> str:
     return " ".join(tags)
 
 
+def _card_fields(card: AnkiCard) -> list[str]:
+    return [card.front, card.back, _tags_str(card.tags), card.source, card.card_type]
+
+
 def cards_to_csv(cards: list[AnkiCard], separator: str = ";") -> str:
     """Render cards to a UTF-8 CSV string, properly escaped."""
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=separator, quoting=csv.QUOTE_MINIMAL)
     writer.writerow(_COLUMNS)
     for card in cards:
-        writer.writerow([card.front, card.back, _tags_str(card.tags), card.source, card.card_type])
+        writer.writerow(_card_fields(card))
     return buf.getvalue()
 
 
@@ -35,13 +39,7 @@ def cards_to_txt(cards: list[AnkiCard], separator: str = "\t") -> str:
     buf = io.StringIO()
     buf.write(separator.join(_COLUMNS) + "\n")
     for card in cards:
-        row = [
-            card.front.replace("\n", " "),
-            card.back.replace("\n", " "),
-            _tags_str(card.tags),
-            card.source,
-            card.card_type,
-        ]
+        row = [f.replace("\n", " ") for f in _card_fields(card)]
         buf.write(separator.join(row) + "\n")
     return buf.getvalue()
 

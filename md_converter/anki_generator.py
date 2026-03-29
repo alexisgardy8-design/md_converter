@@ -184,8 +184,7 @@ def _select_templates(categories: list[str]) -> list[str]:
 
 
 def _format_back(content: str) -> str:
-    lines = [l.strip() for l in content.splitlines() if l.strip()]
-    lines = [l for l in lines if not l.startswith("#")]
+    lines = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("#")]
     return "\n".join(lines)
 
 
@@ -216,19 +215,20 @@ _TRIVIAL: frozenset[str] = frozenset({"oui", "non", "vrai", "faux", "yes", "no",
 
 
 def filter_cards(cards: list[AnkiCard], options: GeneratorOptions) -> tuple[list[AnkiCard], int]:
-    """Quality filter. Returns (kept_cards, filtered_count)."""
+    """Remove low-quality cards: empty fronts, short/trivial backs, duplicates. Returns (kept, filtered_count)."""
     filtered = 0
     kept: list[AnkiCard] = []
     seen: set[tuple[str, str]] = set()
 
     for card in cards:
+        back = card.back.strip()
         if not card.front.strip():
             filtered += 1
             continue
-        if len(card.back.strip()) < options.min_answer_length:
+        if len(back) < options.min_answer_length:
             filtered += 1
             continue
-        if card.back.strip().lower() in _TRIVIAL:
+        if back.lower() in _TRIVIAL:
             filtered += 1
             continue
         key = (card.front, card.back)
@@ -257,12 +257,11 @@ def _apply_max_per_section(cards: list[AnkiCard], max_n: int) -> tuple[list[Anki
 
 def generate_deck(
     markdown: str,
-    source_name: str,
     options: GeneratorOptions | None = None,
 ) -> tuple[list[AnkiCard], int]:
     """Parse markdown and generate Anki cards. Returns (cards, total_filtered_count)."""
     if options is None:
-        options = GeneratorOptions(source_name=source_name)
+        options = GeneratorOptions()
 
     if not markdown.strip():
         return [], 0

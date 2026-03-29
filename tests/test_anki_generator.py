@@ -191,15 +191,15 @@ def test_generate_deck_returns_cards():
         "## Théorème de Rolle\n"
         "Théorème : si f est continue sur [a,b] et dérivable sur ]a,b[ alors il existe c tel que f'(c)=0.\n"
     )
-    cards, n_filtered = generate_deck(md, "maths_cours")
+    cards, n_filtered = generate_deck(md, GeneratorOptions(source_name="maths_cours"))
     assert len(cards) > 0
     assert isinstance(n_filtered, int) and n_filtered >= 0
 
 
 def test_generate_deck_deterministic():
     md = "# Section\nDéfinition : X est un espace vectoriel si ses éléments vérifient les axiomes de groupe."
-    cards1, _ = generate_deck(md, "test")
-    cards2, _ = generate_deck(md, "test")
+    cards1, _ = generate_deck(md)
+    cards2, _ = generate_deck(md)
     assert [(c.front, c.back) for c in cards1] == [(c.front, c.back) for c in cards2]
 
 
@@ -212,11 +212,11 @@ def test_generate_deck_respects_max_cards():
         "Étapes : 1. Identifier 2. Qualifier 3. Appliquer. "
         "Théorème : tout acte illicite oblige son auteur à réparer.\n"
     )
-    cards, _ = generate_deck(md, "droit", GeneratorOptions(max_cards_per_section=3))
+    cards, _ = generate_deck(md, GeneratorOptions(max_cards_per_section=3, source_name="droit"))
     assert len(cards) <= 3
 
 
 def test_generate_deck_empty_markdown():
-    cards, n_filtered = generate_deck("", "empty")
+    cards, n_filtered = generate_deck("")
     assert cards == []
     assert n_filtered == 0

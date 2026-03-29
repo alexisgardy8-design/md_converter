@@ -106,7 +106,7 @@ def test_deterministic_output(native_pdf_path):
 def test_pdf_to_anki_produces_cards(native_pdf_path):
     """Full pipeline: PDF → Markdown → Anki cards (non-empty)."""
     md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
-    cards, n_filtered = generate_deck(md, "native_test")
+    cards, n_filtered = generate_deck(md, GeneratorOptions(source_name="native_test"))
     assert len(cards) > 0, "Expected at least one card from a real PDF"
     assert isinstance(n_filtered, int)
     for card in cards:
@@ -118,7 +118,7 @@ def test_anki_export_csv_importable(native_pdf_path, tmp_path):
     """CSV export must be parseable with csv.reader using default separator."""
     import csv as csv_mod
     md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
-    cards, _ = generate_deck(md, "test")
+    cards, _ = generate_deck(md)
     base = tmp_path / "export"
     paths = export_deck(cards, base, ExportOptions(format="csv", separator=";"))
     assert len(paths) == 1
@@ -131,8 +131,8 @@ def test_anki_export_csv_importable(native_pdf_path, tmp_path):
 def test_anki_cards_deterministic(native_pdf_path):
     """Two generate_deck calls on the same markdown must return identical results."""
     md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
-    cards1, _ = generate_deck(md, "test")
-    cards2, _ = generate_deck(md, "test")
+    cards1, _ = generate_deck(md)
+    cards2, _ = generate_deck(md)
     assert [(c.front, c.back) for c in cards1] == [(c.front, c.back) for c in cards2]
 
 
@@ -140,7 +140,7 @@ def test_anki_respects_max_cards_per_section(native_pdf_path):
     """max_cards_per_section=1 must yield at most 1 card per section."""
     md, _ = convert_pdf(str(native_pdf_path), mode=Mode.FIDELITY)
     opts = GeneratorOptions(max_cards_per_section=1, source_name="test")
-    cards, _ = generate_deck(md, "test", opts)
+    cards, _ = generate_deck(md, opts)
     from collections import Counter
     counts = Counter(c.source for c in cards)
     for src, count in counts.items():

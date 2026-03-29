@@ -290,7 +290,7 @@ if uploaded_file and convert_btn:
         )
 
         progress.progress(70, text="Génération des cartes Anki…")
-        cards, filtered_count = generate_deck(markdown, source_name, gen_opts)
+        cards, filtered_count = generate_deck(markdown, gen_opts)
 
         progress.progress(90, text="Préparation des exports…")
         fmt_map = {"CSV": "csv", "TXT": "txt", "Les deux": "both"}

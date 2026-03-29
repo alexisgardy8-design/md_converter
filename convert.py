@@ -41,9 +41,13 @@ def _output_md_path(pdf_path: Path) -> Path:
     return OUTPUT_DIR / relative.with_suffix(".md")
 
 
+def _file_is_nonempty(path: Path) -> bool:
+    return path.exists() and path.stat().st_size > 0
+
+
 def _is_already_converted(md_path: Path) -> bool:
     """Return True if a non-empty Markdown file already exists at md_path."""
-    return md_path.exists() and md_path.stat().st_size > 0
+    return _file_is_nonempty(md_path)
 
 
 def _output_anki_base_path(pdf_path: Path) -> Path:
@@ -57,11 +61,10 @@ def _anki_already_exists(base_path: Path, fmt: str) -> bool:
     csv_path = base_path.parent / (base_path.name + ".anki.csv")
     txt_path = base_path.parent / (base_path.name + ".anki.txt")
     if fmt == "csv":
-        return csv_path.exists() and csv_path.stat().st_size > 0
+        return _file_is_nonempty(csv_path)
     if fmt == "txt":
-        return txt_path.exists() and txt_path.stat().st_size > 0
-    return (csv_path.exists() and csv_path.stat().st_size > 0
-            and txt_path.exists() and txt_path.stat().st_size > 0)
+        return _file_is_nonempty(txt_path)
+    return _file_is_nonempty(csv_path) and _file_is_nonempty(txt_path)
 
 
 def _generate_anki_for_pdf(
@@ -91,7 +94,7 @@ def _generate_anki_for_pdf(
         min_answer_length=args.anki_min_length,
         source_name=pdf_path.stem,
     )
-    cards, n_filtered = generate_deck(markdown, pdf_path.stem, gen_opts)
+    cards, n_filtered = generate_deck(markdown, gen_opts)
 
     export_opts = ExportOptions(format=args.anki_format, separator=args.anki_separator)
     created = export_deck(cards, base_path, export_opts)
