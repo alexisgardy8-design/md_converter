@@ -5,7 +5,7 @@ convert.py — Convert all PDFs in input/ to Markdown in output/.
 Usage:
     python3 convert.py             # skip already-converted files
     python3 convert.py --force     # reconvert everything
-    python3 convert.py --compact   # use compact (token-optimised) mode
+    python3 convert.py --compact          # use compact (token-optimised) mode
     python3 convert.py --verbose   # detailed pipeline output
     python3 convert.py --help      # show all options
 
@@ -90,7 +90,7 @@ def _generate_anki_for_pdf(
 
     markdown = md_path.read_text(encoding="utf-8")
     gen_opts = GeneratorOptions(
-        max_cards_per_section=args.anki_max_cards,
+        total_cards_per_pdf=args.anki_total_cards,
         min_answer_length=args.anki_min_length,
         source_name=pdf_path.stem,
     )
@@ -185,8 +185,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Regenerate deck even if Markdown was skipped (already converted).",
     )
     anki.add_argument(
-        "--anki-max-cards", type=int, default=5, dest="anki_max_cards", metavar="N",
-        help="Maximum cards per section (default: 5).",
+        "--anki-total-cards", type=int, default=20, dest="anki_total_cards", metavar="N",
+        help="Total cards to generate per PDF (default: 20).",
     )
     anki.add_argument(
         "--anki-min-length", type=int, default=20, dest="anki_min_length", metavar="N",

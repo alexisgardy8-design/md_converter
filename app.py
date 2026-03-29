@@ -247,11 +247,49 @@ with col_upload:
         label_visibility="collapsed",
     )
 
+def _sync_slider_to_state() -> None:
+    st.session_state["total_cards"] = st.session_state["_tc_slider"]
+
+
+def _sync_input_to_state() -> None:
+    st.session_state["total_cards"] = max(5, min(50, int(st.session_state["_tc_input"])))
+
+
+if "total_cards" not in st.session_state:
+    st.session_state["total_cards"] = 20
+
 with col_opts:
     st.markdown('<p class="section-label">Options</p>', unsafe_allow_html=True)
     mode_choice = st.radio("Mode de conversion", ["Fidelity", "Compact"], horizontal=True)
     format_choice = st.radio("Format export Anki", ["CSV", "TXT", "Les deux"], horizontal=True)
-    max_cards = st.slider("Max cartes / section", min_value=1, max_value=15, value=5)
+
+    st.markdown(
+        '<p style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
+        'color:#5a5a6a;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.2rem;">'
+        'Nombre de cartes par PDF</p>',
+        unsafe_allow_html=True,
+    )
+    st.caption("Nombre total de cartes générées pour chaque PDF.")
+    col_slide, col_num = st.columns([3, 1])
+    with col_slide:
+        st.slider(
+            "Nombre de cartes par PDF",
+            min_value=5, max_value=50, step=1,
+            value=st.session_state["total_cards"],
+            key="_tc_slider",
+            on_change=_sync_slider_to_state,
+            label_visibility="collapsed",
+        )
+    with col_num:
+        st.number_input(
+            "Valeur",
+            min_value=5, max_value=50, step=1,
+            value=st.session_state["total_cards"],
+            key="_tc_input",
+            on_change=_sync_input_to_state,
+            label_visibility="collapsed",
+        )
+
     min_length = st.slider("Longueur min. réponse (caractères)", min_value=5, max_value=100, value=20)
     st.markdown("<br>", unsafe_allow_html=True)
     convert_btn = st.button("Convertir", use_container_width=True)
@@ -284,7 +322,7 @@ if uploaded_file and convert_btn:
         progress.progress(55, text="Nettoyage et structuration…")
         source_name = Path(uploaded_file.name).stem
         gen_opts = GeneratorOptions(
-            max_cards_per_section=max_cards,
+            total_cards_per_pdf=st.session_state["total_cards"],
             min_answer_length=min_length,
             source_name=source_name,
         )

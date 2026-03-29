@@ -126,6 +126,10 @@ from md_converter.anki_generator import (
     generate_deck,
     GeneratorOptions,
     AnkiCard,
+    _is_short_answer_allowed,
+    _is_tautological,
+    _post_process_back,
+    _apply_pdf_quota,
 )
 
 
@@ -178,7 +182,7 @@ def test_filter_rejects_trivial_back():
 
 
 def test_filter_deduplicates():
-    card = AnkiCard(front="Q ?", back="R " * 15, card_type="x")
+    card = AnkiCard(front="Question dupliquée ?", back="R " * 15, card_type="x")
     kept, n_filtered = filter_cards([card, card, card], GeneratorOptions())
     assert len(kept) == 1
     assert n_filtered == 2
@@ -203,7 +207,7 @@ def test_generate_deck_deterministic():
     assert [(c.front, c.back) for c in cards1] == [(c.front, c.back) for c in cards2]
 
 
-def test_generate_deck_respects_max_cards():
+def test_generate_deck_respects_total_quota():
     md = (
         "# BigSection\n"
         "Définition : le droit est l'ensemble des règles qui régissent la société. "
@@ -212,7 +216,7 @@ def test_generate_deck_respects_max_cards():
         "Étapes : 1. Identifier 2. Qualifier 3. Appliquer. "
         "Théorème : tout acte illicite oblige son auteur à réparer.\n"
     )
-    cards, _ = generate_deck(md, GeneratorOptions(max_cards_per_section=3, source_name="droit"))
+    cards, _ = generate_deck(md, GeneratorOptions(total_cards_per_pdf=3, source_name="droit"))
     assert len(cards) <= 3
 
 
@@ -220,3 +224,102 @@ def test_generate_deck_empty_markdown():
     cards, n_filtered = generate_deck("")
     assert cards == []
     assert n_filtered == 0
+
+
+# ── Quality helpers ──────────────────────────────────────────────────────────
+
+def test_short_answer_allowed_formula():
+    assert _is_short_answer_allowed("E = mc²")
+    assert _is_short_answer_allowed(r"\frac{d}{dx}f(x)")
+    assert _is_short_answer_allowed("$F = ma$")
+
+
+def test_short_answer_allowed_legal():
+    assert _is_short_answer_allowed("Article 1382 du Code civil")
+    assert _is_short_answer_allowed("Loi du 29 juillet 1881")
+
+
+def test_short_answer_allowed_factual():
+    assert _is_short_answer_allowed("En 1789")
+    assert _is_short_answer_allowed("98 %")
+
+
+def test_short_answer_not_allowed_plain():
+    assert not _is_short_answer_allowed("oui")
+    assert not _is_short_answer_allowed("très utile")
+
+
+def test_tautological_identical():
+    assert _is_tautological("Définir X ?", "Définir X ?")
+
+
+def test_tautological_punctuation_stripped():
+    assert _is_tautological("Définir X", "Définir X!")
+
+
+def test_not_tautological():
+    assert not _is_tautological(
+        "Qu'est-ce que la dérivée ?",
+        "La dérivée est la limite du taux de variation quand h tend vers 0.",
+    )
+
+
+def test_post_process_back_capitalizes():
+    assert _post_process_back("la dérivée est...").startswith("La")
+
+
+def test_post_process_back_adds_period():
+    assert _post_process_back("valeur unique").endswith(".")
+
+
+def test_post_process_back_no_double_period():
+    result = _post_process_back("déjà une phrase.")
+    assert result.endswith(".")
+    assert not result.endswith("..")
+
+
+def test_post_process_back_no_period_on_multiline():
+    result = _post_process_back("ligne 1\nligne 2")
+    assert not result.endswith(".")
+
+
+def test_apply_pdf_quota_under_limit():
+    cards = [AnkiCard(front=f"Q{i}", back="R " * 10, card_type="definition") for i in range(5)]
+    kept, filtered = _apply_pdf_quota(cards, 10)
+    assert len(kept) == 5
+    assert filtered == 0
+
+
+def test_apply_pdf_quota_trims_to_total():
+    cards = [AnkiCard(front=f"Q{i}", back="R " * 10, card_type="enumeration") for i in range(30)]
+    kept, filtered = _apply_pdf_quota(cards, 10)
+    assert len(kept) == 10
+    assert filtered == 20
+
+
+def test_apply_pdf_quota_prefers_high_priority_types():
+    theorem = AnkiCard(front="Q", back="R " * 10, card_type="theorem")
+    enum = AnkiCard(front="Q2", back="R " * 10, card_type="enumeration")
+    kept, _ = _apply_pdf_quota([enum, theorem], 1)
+    assert kept[0].card_type == "theorem"
+
+
+def test_filter_rejects_tautological():
+    card = AnkiCard(front="Définir la dérivée", back="Définir la dérivée", card_type="definition")
+    kept, n = filter_cards([card], GeneratorOptions(min_answer_length=1))
+    assert n == 1
+    assert len(kept) == 0
+
+
+def test_filter_allows_short_formula():
+    card = AnkiCard(front="Donner la formule de l'énergie", back="E = mc²", card_type="formula")
+    kept, n = filter_cards([card], GeneratorOptions(min_answer_length=20))
+    assert len(kept) == 1
+    assert n == 0
+
+
+def test_filter_rejects_short_front():
+    card = AnkiCard(front="Q ?", back="Réponse longue suffisante pour le filtre.", card_type="x")
+    kept, n = filter_cards([card], GeneratorOptions(min_answer_length=10))
+    assert n == 1
+    assert len(kept) == 0
